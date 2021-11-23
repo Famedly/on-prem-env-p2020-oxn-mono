@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  author: Emmanouil Kampitakis (@madonius)
+  description: Installs and configures element
+
+  license: MIT
+
+  min_ansible_version: 2.7
+
+  platforms:
+    - name: Debian
+      versions:
+        - all
+
+  galaxy_tags:
+    - matrix
+    - element
+
+dependencies: []

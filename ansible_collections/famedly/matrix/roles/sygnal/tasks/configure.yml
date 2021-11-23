@@ -1,0 +1,20 @@
+---
+- name: create_user
+  user:
+    name: sygnal
+    state: present
+  register: sygnal_user
+
+- name: create base directory
+  file:
+    path: "{{ sygnal_base_path }}"
+    state: directory
+    owner: sygnal
+    group: sygnal
+
+- name: deploy sygnal config
+  template:
+    src: sygnal.yml.j2
+    dest: "{{ sygnal_base_path }}/sygnal.yml"
+    owner: sygnal
+    group: sygnal

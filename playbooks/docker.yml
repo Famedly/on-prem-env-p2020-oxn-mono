@@ -1,0 +1,12 @@
+---
+
+- name: Install and configure docker
+  hosts: [ all ]
+  become: yes
+  collections:
+    - famedly.base
+  roles:
+    - name: docker
+      tags: [ 'prepare', 'prepare-docker' ]
+  vars:
+    docker_install_compose: false

@@ -1,0 +1,105 @@
+---
+
+- name: Create user
+  user:
+    name: "{{ traefik_user }}"
+    groups: docker
+    append: yes
+  register: traefik_user_info
+  tags: ['prepare', 'prepare-traefik']
+
+- name: Create traefik base directory
+  file:
+    path: "{{ traefik_base_path }}"
+    state: directory
+    owner: "{{ traefik_base_path_owner | default(traefik_user_info.uid) }}"
+    group: "{{ traefik_base_path_group | default(traefik_user_info.group) }}"
+    mode: "{{ traefik_base_path_mode | default('0750') }}"
+  tags: ['prepare', 'prepare-traefik']
+
+- name: Create traefik config directory
+  file:
+    path: "{{ traefik_dyn_config_path }}"
+    state: directory
+    owner: "{{ traefik_config_path_owner | default(traefik_user_info.uid) }}"
+    group: "{{ traefik_config_path_group | default(traefik_user_info.group) }}"
+    mode: "{{ traefik_config_path_mode | default('0750') }}"
+  tags: ['prepare', 'prepare-traefik']
+
+- name: Add admin user to password file and ensure permissions are set
+  community.general.htpasswd:
+    path: "{{ traefik_api_users_file }}"
+    name: "{{ traefik_api_admin_username }}"
+    password: "{{ traefik_api_admin_password }}"
+    owner: "{{ traefik_user_info.uid }}"
+    group: "{{ traefik_user_info.group }}"
+    mode: 0600
+  tags: ['prepare', 'prepare-traefik']
+  when: traefik_enable_api|bool and traefik_enable_api_authentication|bool
+
+- name: Deploy manually managed certificates
+  include_tasks:
+    file: manual-cert-management.yml
+    apply:
+      tags: ['prepare', 'prepare-traefik']
+  when: traefik_manual_tls_management_enabled|bool
+  tags: ['prepare', 'prepare-traefik']
+
+- name: Setup ACME
+  include_tasks:
+    file: acme.yml
+    apply:
+      tags: ['prepare', 'prepare-traefik']
+  tags: ['prepare', 'prepare-traefik']
+
+- name: Template config file
+  template:
+    src: traefik.yml.j2
+    dest: "{{ traefik_base_path }}/config.yml"
+    owner: traefik
+    group: traefik
+  notify: restart traefik
+  tags: ['deploy', 'deploy-traefik']
+
+- name: Template dynamic configurations for {{ item }}
+  template:
+    src: "{{ item }}.yml.j2"
+    dest: "{{ traefik_dyn_config_path }}/{{ item }}.yml"
+    owner: "{{ traefik_user_info.uid }}"
+    group: "{{ traefik_user_info.group }}"
+    mode: 0640
+  loop: "{{ traefik_dynamic_configs }}"
+  notify: restart traefik
+  tags: ['deploy', 'deploy-traefik']
+
+- name: Ensure traefik container image is present
+  docker_image:
+    name: "{{ traefik_container_image_ref }}"
+    force_source: "{{ traefik_container_pull }}"
+    source: pull
+    state: present
+  register: traefik_container_image_pulled
+  until: traefik_container_image_pulled is success
+  retries: 10
+  delay: 5
+  tags: ['prepare', 'prepare-traefik']
+
+- name: Ensure traefik container is running
+  docker_container:
+    name: "{{ traefik_container_name }}"
+    image: '{{ traefik_container_image_ref }}'
+    networks: "{{ traefik_container_networks | default(omit) }}"
+    etc_hosts: "{{ traefik_container_etc_hosts }}"
+    network_mode: "{{ traefik_container_network_mode }}"
+    ports: "{{ traefik_container_ports }}"
+    labels: "{{ traefik_container_labels_complete }}"
+    env: "{{ traefik_container_env }}"
+    volumes: "{{ traefik_container_volumes }}"
+    restart_policy: unless-stopped
+    state: started
+#       TODO: Make running this as non-root work.
+#       user: "{{ traefik_user_info.uid }}:{{ traefik_user_info.group }}"
+    healthcheck:
+      test: >-
+        wget -q --spider http://localhost:8022/ping
+  tags: ['deploy', 'deploy-traefik']

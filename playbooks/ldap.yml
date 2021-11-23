@@ -1,0 +1,84 @@
+---
+- name: Configure openldap in a container
+  hosts: [ all ]
+  become: yes
+  collections:
+    - famedly.base
+    - community.general
+  roles:
+    - role: ldap
+  tasks:
+    - name: Collect LDAP auth info
+      meta: noop
+      vars: &ldap_auth
+        server_uri: "{{ ldap_server_uri }}"
+        bind_dn: "cn=admin,{{ ldap_base_dn }}"
+        bind_pw: "{{ ldap_root_pass }}"
+      tags: [ 'deploy', 'deploy-ldap' ]
+
+    - name: Create admin user
+      ldap_entry:
+        <<: *ldap_auth
+        dn: "uid=admin,ou=users,{{ ldap_base_dn }}"
+        objectClass:
+          - inetOrgPerson
+        attributes:
+          uid: "admin"
+          cn: "Administrator"
+          sn: "Administrator"
+          mail: "admin@{{ inventory_hostname }}"
+          userPassword: "{{ ldap_admin_password }}"
+        state: present
+      # Needs `deploy` because the LDAP server needs to be running
+      tags: [ 'deploy', 'deploy-ldap' ]
+
+    - name: Ensure admin password is correct
+      ldap_attrs:
+        <<: *ldap_auth
+        dn: "uid=admin,ou=users,{{ ldap_base_dn }}"
+        attributes: "{{ { item.name: item.value } }}"
+        state: exact
+      no_log: "{{ item.log is defined and item.log == false }}"
+      loop:
+        - {name: "userPassword", value: "{{ ldap_admin_password }}", log: false}
+      tags: [ 'deploy', 'deploy-ldap' ]
+
+    - name: Create LDAP groups
+      ldap_entry:
+        <<: *ldap_auth
+        dn: "cn={{ item.cn }},ou=groups,{{ ldap_base_dn }}"
+        objectClass:
+          - groupOfNames
+        attributes:
+          member: "{{ item.members }}"
+      loop: "{{ [ ldap_admin_group ] + ldap_additional_groups|default([]) }}"
+      tags: [ 'deploy', 'deploy-ldap' ]
+
+    - name: Ensure users are always in their group
+      ldap_attrs:
+        <<: *ldap_auth
+        dn: "cn={{ item.0.cn }},ou=groups,{{ ldap_dn }}"
+        attributes:
+          member: "{{ item.1 }}"
+        state: present
+      loop: "{{ ([ ldap_admin_group ] + ldap_additional_groups|default([])) | subelements('members') }}"
+      tags: [ 'deploy', 'deploy-ldap' ]
+
+    - name: Create LDAP service accounts
+      ldap_entry:
+        <<: *ldap_auth
+        dn: "userid={{ item.value.name }},ou=services,{{ ldap_dn }}"
+        objectClass:
+          - account
+          - simpleSecurityObject
+        attributes:
+          userid: "{{ item.value.name }}"
+          userPassword: "{{ item.value.password }}"
+      loop: "{{ ldap_service_accounts|default({}) | dict2items }}"
+      tags: [ 'deploy', 'deploy-ldap' ]
+
+  vars:
+    ldap_admin_group:
+      cn: admins
+      members:
+        - "uid=admin,ou=users,{{ ldap_base_dn }}"

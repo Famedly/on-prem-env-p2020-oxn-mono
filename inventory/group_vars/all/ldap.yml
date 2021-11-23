@@ -1,0 +1,47 @@
+---
+
+ldap_domain: "{{ inventory_hostname }}"
+ldap_org: "P2020 Test"
+
+ldap_bind_ip: "{{ docker_gateway_ip }}"
+ldap_server_uri: "ldap://{{ ldap_bind_ip }}:389"
+ldap_container_ports:
+  - "{{ ldap_bind_ip }}:389:389"
+
+ldap_base_dn: "dc={{ inventory_hostname | replace('.', ',dc=') }}"
+
+ldap_org_units:
+  - groups
+  - users
+  - services
+
+ldap_service_accounts:
+  phpldapadmin:
+    name: phpldapadmin
+    password: "{{ ldap_phpldapadmin_password }}"
+  matrix:
+    name: matrix
+    password: "{{ ldap_matrix_password }}"
+
+# Famedly LDAP ACLs:
+# 0 allow all members of cn=admin,ou=groups,... manage on the {{ ldap_base_dn }}, allow service users to read entries. "break" at the end to allow non-admins to be processed by the following ACLs
+# 1 allow to auth with userPassword, =w to only write but not imply read,search,compare,disclose
+# 2 all inetOrgPerson entries can only be seen by the associated user => only see yourself, no other users
+# 3 Allow read on the rest: root node, ou=users group (but not children) and the ou=groups-Subtree
+ldap_acls:
+  - >-
+    {0} to dn.subtree="{{ ldap_base_dn }}"
+      by group.exact="cn=admins,ou=groups,{{ ldap_base_dn }}" manage
+      by dn.children="ou=services,{{ ldap_base_dn }}" read
+      by * break
+  - >-
+    {1} to attrs=userPassword
+      by anonymous auth
+      by self =w
+      by * none
+  - >-
+    {2} to filter=(objectClass=inetOrgPerson) attrs=entry
+      by self read
+  - >-
+    {3} to *
+      by users read

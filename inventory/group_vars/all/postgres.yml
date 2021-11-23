@@ -1,0 +1,8 @@
+---
+
+postgresql_connect_socket: true
+postgresql_superuser_password: "TODO"
+
+postgresql_global_config_options:
+  - option: "listen_addresses"
+    value: "*"

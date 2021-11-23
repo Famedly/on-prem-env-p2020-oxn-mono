@@ -1,0 +1,8 @@
+---
+- import_playbook: base.yml
+- import_playbook: docker.yml
+- import_playbook: traefik.yml
+- import_playbook: postgresql.yml
+- import_playbook: ldap.yml
+- import_playbook: well-known.yml
+- import_playbook: matrix-server.yml

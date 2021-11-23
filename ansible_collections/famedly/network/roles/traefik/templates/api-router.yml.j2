@@ -1,0 +1,36 @@
+#jinja2: lstrip_blocks: "True", trim_blocks: "True"
+{% if traefik_enable_api %}
+http:
+  routers:
+    api:
+      rule: Host(`{{ traefik_api_host }}`)
+      entryPoints:
+        - {{ traefik_api_entrypoint }}
+      service: api@internal
+      {% if traefik_enable_api_authentication %}
+      middlewares:
+        - apiAuth
+      {% endif %}
+      {% if traefik_enable_api_tls %}
+      tls:
+        {% if not traefik_manual_tls_management_enabled %}
+        certResolver: letsencrypt
+        {% if traefik_api_tls_domains %}
+        domains:
+          {% for domain in traefik_api_tls_domains %}
+          - main: "{{ domain.main }}"
+            sans:
+	    {% for san in domain.sans %}
+              - "{{ san }}"
+            {% endfor %}
+          {% endfor %}
+        {% endif %}
+        {% endif %}
+      {% endif %}
+  {% if traefik_enable_api_authentication %}
+  middlewares:
+    apiAuth:
+      basicAuth:
+        usersFile: '{{ traefik_api_users_file }}'
+  {% endif %}
+{% endif %}

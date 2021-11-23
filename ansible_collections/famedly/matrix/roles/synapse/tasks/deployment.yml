@@ -1,0 +1,91 @@
+---
+- name: install synapse with pip into virtualenv
+  block:
+    - name: Install dependencies
+      apt:
+        name:
+          - git
+          - build-essential
+          - python3-dev
+          - python-virtualenv
+          - python-pip
+          - python-setuptools
+          - sqlite3
+          - libffi-dev
+          - libssl-dev
+          - libjpeg-dev
+          - libxslt1-dev
+          - libpq-dev
+        state: present
+        cache_valid_time: 1800
+      register: matrix_synapse_dependencies_pulled
+      until: matrix_synapse_dependencies_pulled is success
+      retries: 10
+      delay: 5
+      tags: ['prepare', 'prepare-synapse']
+
+    - name: Create virtualenv
+      pip:
+        name: >-2
+          {{
+            ['pip', 'setuptools']
+            +
+            (['txredisapi>=1.4.7', 'hiredis'] if matrix_synapse_workers_enabled|bool else [])
+          }}
+        virtualenv: "{{ matrix_synapse_base_path }}/env"
+        virtualenv_python: python3
+        extra_args: --upgrade
+      tags: ['prepare', 'prepare-synapse']
+
+    - name: Clone synapse
+      git:
+        repo: https://github.com/matrix-org/synapse
+        dest: "{{ matrix_synapse_base_path }}/synapse"
+        accept_hostkey: yes
+        version: "v{{ matrix_synapse_version }}"
+      register: matrix_synapse_source_cloned
+      until: matrix_synapse_source_cloned is success
+      retries: 10
+      delay: 5
+      tags: ['prepare', 'prepare-synapse']
+
+    - name: Install Synapse
+      pip:
+        name: "{{ matrix_synapse_base_path }}/synapse[matrix-synapse-ldap3,postgres,resources.consent,acme,url_preview]"
+        virtualenv: "{{ matrix_synapse_base_path }}/env"
+      when: matrix_synapse_source_cloned.changed
+      notify: restart matrix-synapse
+      tags: ['deploy', 'deploy-synapse', 'skip_ansible_lint']
+  when: matrix_synapse_deployment_method == "pip"
+
+- name: Ensure synapse container image is present
+  docker_image:
+    name: "{{ matrix_synapse_container_ref }}:{{ matrix_synapse_container_tag }}"
+    force_source: "{{ matrix_synapse_docker_pull }}"
+    source: pull
+    state: present
+  register: matrix_synapse_container_image_pulled
+  until: matrix_synapse_container_image_pulled is success
+  retries: 10
+  delay: 5
+  when: matrix_synapse_deployment_method == "docker"
+  tags: ['prepare', 'prepare-synapse']
+
+- name: Ensure synapse container is running
+  docker_container:
+    name: "{{ matrix_synapse_container_name }}"
+    image: "{{ matrix_synapse_container_ref }}:{{ matrix_synapse_container_tag }}"
+    networks: "{{ matrix_synapse_docker_networks }}"
+    etc_hosts: "{{ matrix_synapse_docker_etc_hosts }}"
+    ports: "{{ matrix_synapse_docker_ports }}"
+    labels: "{{ matrix_synapse_docker_labels_complete }}"
+    env: "{{ matrix_synapse_docker_env }}"
+    recreate: "{{ matrix_synapse_docker_recreate }}"
+    entrypoint: "{{ matrix_synapse_docker_entrypoint }}"
+    command: "{{ matrix_synapse_docker_command }}"
+    user: "{{ synapse_user.uid }}:{{ appservice_group.gid }}"
+    volumes: "{{ matrix_synapse_docker_volumes }}"
+    restart_policy: unless-stopped
+    state: started
+  when: matrix_synapse_deployment_method == "docker"
+  tags: ['deploy', 'deploy-synapse']

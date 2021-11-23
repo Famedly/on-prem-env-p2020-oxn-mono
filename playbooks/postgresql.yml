@@ -1,0 +1,6 @@
+---
+- name: Install postgres
+  hosts: [ all ]
+  become: true
+  roles:
+    - famedly.base.postgresql

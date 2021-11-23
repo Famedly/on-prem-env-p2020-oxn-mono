@@ -1,0 +1,22 @@
+---
+- name: Deploy traefik, a reverse proxy, in a container
+  hosts: [ all ]
+  become: yes
+  collections:
+    - famedly.base
+    - famedly.network
+    - community.general
+  roles:
+    - role: traefik
+  vars:
+    traefik_enable_api: false
+    traefik_api_host: ""
+    traefik_enable_prometheus: false
+    traefik_metrics_host: ""
+    traefik_cert_resolvers:
+      - slug: "acme"
+        acme:
+          registration_email: "devops+acme-on-premise-p2020@famedly.com"
+          ca_server: "{{ acme_server }}"
+          challenge_type: "TLS-ALPN-01"
+          challenge_config: {}

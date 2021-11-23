@@ -1,0 +1,15 @@
+---
+all:
+  hosts:
+    TODO:
+      ansible_user: root
+      ansible_host: TODO
+      acme_server: "https://acme-staging-v02.api.letsencrypt.org/directory"
+      ldap_root_pass:
+      ldap_root_pass_hash:
+      ldap_admin_password:
+      ldap_phpldapadmin_password:
+      ldap_matrix_password:
+      postgresql_superuser_password:
+      matrix_synapse_pg_pass:
+      matrix_synapse_redis_pass:

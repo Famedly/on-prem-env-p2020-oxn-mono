@@ -1,0 +1,72 @@
+#jinja2: lstrip_blocks: "True", trim_blocks: "True"
+entryPoints:
+{% for entrypoint in traefik_entrypoints %}
+  {{ entrypoint.name }}: {{ entrypoint.config | tojson }}
+{% endfor %}
+
+ping:
+  entryPoint: "ping"
+
+{% if traefik_enable_prometheus %}
+metrics:
+  prometheus:
+    manualRouting: true
+    addEntryPointsLabels: true
+    addServicesLabels: true
+{% endif %}
+
+{% if traefik_enable_api %}
+api:
+  dashboard: {{ traefik_enable_api_dashboard }}
+  debug: {{ traefik_enable_api_debug }}
+{% endif %}
+
+{% if traefik_cert_resolvers|length > 0 %}
+certificatesResolvers:
+{% for resolver in traefik_cert_resolvers %}
+  {{ resolver.slug }}:
+  {% if resolver.acme is defined %}
+    acme:
+      email: "{{ resolver.acme.registration_email }}"
+      {% if resolver.acme.ca_server is defined %}
+      caServer: "{{ resolver.acme.ca_server }}"
+      {% endif %}
+      {% if resolver.acme.challenge_type  == 'HTTP-01' %}
+      httpChallenge:
+        {{ resolver.acme.challenge_config | to_nice_yaml }}
+      {% elif resolver.acme.challenge_type == 'DNS-01' %}
+      dnsChallenge:
+        {{ resolver.acme.challenge_config | to_nice_yaml }}
+      {% elif resolver.acme.challenge_type == 'TLS-ALPN-01' %}
+      tlsChallenge:
+        {{ resolver.acme.challenge_config | to_nice_yaml }}
+      {% endif %}
+  {% endif %}
+{% endfor %}
+{% endif %}
+
+providers:
+  {% if traefik_enable_docker %}
+  docker:
+    exposedByDefault: false
+  {% endif %}
+  file:
+    directory: {{ traefik_base_path }}/config.d
+
+log:
+  level: {{ traefik_log_level }}
+
+{% if traefik_enable_access_log %}
+accessLog: {}
+{% endif %}
+
+{% if traefik_skip_ssl_verify is defined or traefik_trusted_root_cas is defined %}
+serversTransport:
+  insecureSkipVerify: {{ 'true' if traefik_skip_ssl_verify|default(False) else 'false' }}
+  {% if traefik_trusted_root_cas | default([]) | length > 0 -%}
+  rootCAs:
+    {% for ca in traefik_trusted_root_cas|default([]) %}
+    - {{ ca }}
+    {% endfor %}
+  {%- endif %}
+{% endif %}

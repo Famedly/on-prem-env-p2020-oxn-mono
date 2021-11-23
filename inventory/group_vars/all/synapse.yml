@@ -1,0 +1,60 @@
+---
+
+# How to deploy synapse
+matrix_server_name: "{{ inventory_hostname }}"
+matrix_synapse_deployment_method: docker
+matrix_synapse_supervision_method: docker
+matrix_synapse_api_port: 8008
+
+# Docker configuration
+matrix_synapse_postgresql_run_path: "/opt/postgresql/sockets"
+matrix_synapse_extra_docker_volumes:
+  - "{{ matrix_synapse_postgresql_run_path + '/:/var/run/postgresql/:z' }}"
+
+# Postgres configuration
+matrix_synapse_pg_host: "/var/run/postgresql"
+matrix_synapse_pg_db: "synapse"
+matrix_synapse_pg_user: "synapse"
+
+matrix_synapse_postgresql_users:
+  - name: "{{ matrix_synapse_pg_user }}"
+    password: "{{ matrix_synapse_pg_pass }}"
+matrix_synapse_postgresql_databases:
+  - name: "{{ matrix_synapse_pg_db }}"
+    owner: "{{ matrix_synapse_pg_user }}"
+matrix_synapse_postgresql_hba_entries:
+  - contype: local
+    users: "{{ matrix_synapse_pg_user }}"
+    databases: "{{ matrix_synapse_pg_db }}"
+    method: md5
+
+matrix_synapse_report_stats: false
+
+# Synapse configuration
+matrix_synapse_extra_config:
+  public_baseurl: "https://matrix-{{ inventory_hostname }}"
+  no_tls: true
+  app_service_config_files: []
+  password_providers:
+        - module: "ldap_auth_provider.LdapAuthProvider"
+          config:
+            enabled: true
+            mode: search
+            uri: "172.17.0.1:389"
+            start_tls: false
+            base: "ou=users,{{ ldap_base_dn }}"
+            attributes:
+              uid: uid
+              mail: mail
+              name: cn
+            bind_dn: "uid=matrix,ou=services,{{ ldap_base_dn }}"
+            bind_password: "{{ ldap_matrix_password }}"
+            filter: "(objectClass=inetOrgPerson)"
+  listeners:
+    - port: "{{ matrix_synapse_api_port }}"
+      bind_addresses: ['::', '0.0.0.0']
+      type: http
+      x_forwarded: true
+      resources:
+        - { names: [client], compress: true }
+        - { names: [federation], compress: false }

@@ -1,0 +1,136 @@
+---
+
+- name: Ensure lego user is created
+  user:
+    name: "{{ lego_user }}"
+    state: present
+    system: yes
+  register: lego_user_res
+
+- name: Ensure base directory for lego is created
+  file:
+    path: "{{ lego_base_path }}"
+    state: directory
+    owner: "{{ lego_certificate_store_user }}"
+    group: "{{ lego_certificate_store_group }}"
+    mode: "0755"
+
+- name: Ensure certificate directory exists and has the configured permissions
+  file:
+    path: "{{ lego_certificate_store }}"
+    state: directory
+    owner: "{{ lego_certificate_store_user }}"
+    group: "{{ lego_certificate_store_group }}"
+    mode: "{{ lego_certificate_store_mode }}"
+
+- name: Ensure lego binary exists and has the correct version
+  shell: "{{ lego_check_version_cmd }}"
+  check_mode: false
+  changed_when: false
+  ignore_errors: yes
+  register: lego_version_res
+
+- name: Install lego from github releases
+  block:
+    - name: Download source file
+      get_url:
+        url: "{{ lego_source_url }}"
+        dest: "{{ lego_base_path }}/source.tar"
+        checksum: "{{ lego_source_checksum_url }}"
+
+    - name: Unpack source files
+      unarchive:
+        src: "{{ lego_base_path }}/source.tar"
+        dest: "{{ lego_base_path }}"
+        owner: "{{ lego_user_res.uid }}"
+        group: "{{ lego_user_res.group }}"
+        remote_src: True
+
+    - name: Allow lego to bind to ports below 1024
+      capabilities:
+        path: "{{ lego_executable }}"
+        capability: cap_net_bind_service=+ep
+        state: present
+      when: lego_cap_net_bind_service
+
+    - name: Delete source files
+      file:
+        path: "{{ lego_base_path }}/source.tar"
+        state: absent
+  when: 'lego_version_res.failed or not lego_version in lego_version_res.stdout'
+
+- name: Create acme account
+  block:
+    - name: Create account directory
+      file:
+        path: "{{ lego_acme_account_base_path }}"
+        state: directory
+        mode: "0700"
+        owner: "{{ lego_user_res.uid }}"
+        group: "{{ lego_user_res.group }}"
+
+    - name: Create key directory
+      file:
+        path: "{{ lego_acme_key_base_path }}"
+        state: directory
+        mode: "0700"
+        owner: "{{ lego_user_res.uid }}"
+        group: "{{ lego_user_res.group }}"
+
+    - name: Save acme account
+      copy:
+        dest: "{{ lego_acme_account_path }}"
+        content: "{{ lego_acme_account_merged | to_json }}"
+      notify:
+        - Run lego
+
+    - name: Save acme private key
+      copy:
+        dest: "{{ lego_acme_key_path }}"
+        content: "{{ lego_acme_privkey }}"
+      notify:
+        - Run lego
+
+  when: lego_acme_account is defined and lego_acme_privkey is defined
+
+
+- name: Ensure systemd unit file for lego is templated
+  template:
+    src: lego.service.j2
+    dest: "{{ lego_systemd_path }}/lego.service"
+    owner: "root"
+    group: "root"
+    mode: '0755'
+  notify:
+    - Run lego
+    - Reload systemd
+
+- name: Ensure systemd timer for lego is templated
+  template:
+    src: lego.timer.j2
+    dest: "{{ lego_systemd_path }}/lego.timer"
+    owner: "root"
+    group: "root"
+    mode: '0755'
+  notify:
+    - Reload systemd
+
+- name: Flush handlers to ensure systemd has loaded the unit files
+  meta: flush_handlers
+
+- name: Enable lego.service
+  systemd:
+    name: "lego.service"
+    enabled: yes
+
+- name: Enable lego.timer
+  systemd:
+    name: "lego.timer"
+    enabled: yes
+  register: res_lego_timer
+
+- name: Start lego.timer
+  systemd:
+    name: "lego.timer"
+    state: started
+  when: res_lego_timer.changed

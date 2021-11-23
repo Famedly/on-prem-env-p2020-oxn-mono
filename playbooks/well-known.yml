@@ -1,0 +1,77 @@
+---
+
+- name: Serve .well-known files from a container
+  hosts: [ all ]
+  become: yes
+  tasks:
+    - name: create base directory to store files
+      file:
+        path: "{{ wellknown_basepath }}"
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+      tags: [ 'prepare', 'prepare-wellknown' ]
+    - name: template `well-known-nginx.conf` with the well-known data
+      template:
+        src: well-known-nginx.conf.j2
+        dest: "{{ wellknown_basepath }}/well-known.conf"
+        owner: root
+        group: root
+        mode: 0644
+      vars:
+        server_config:
+          "m.server": "matrix-{{ inventory_hostname }}:443"
+        client_config:
+          "m.homeserver":
+            base_url: "https://matrix-{{ inventory_hostname }}"
+      notify: restart-wellknown
+      tags: [ 'deploy', 'deploy-wellknown' ]
+    - name: ensure nginx container image is present
+      docker_image:
+        name: "{{ wellknown_container_image_name }}"
+        force_source: "{{ wellknown_container_image_force_pull|default(False) }}"
+        source: pull
+        state: present
+      register: wellknown_container_image_pulled
+      until: wellknown_container_image_pulled is success
+      retries: 10
+      delay: 5
+      tags: [ 'prepare', 'prepare-wellknown' ]
+    - name: start nginx container to serve the well-known files
+      docker_container:
+        name: "{{ wellknown_container_name }}"
+        image: "{{ wellknown_container_image }}"
+        ports: "{{ wellknown_container_ports }}"
+        volumes: "{{ wellknown_container_volumes }}"
+        labels: "{{ wellknown_container_labels }}"
+        state: started
+        comparisons:
+          '*': strict
+        healthcheck:
+          test:
+            - 'CMD-SHELL'
+            - '[ $(curl -H "Host: {{ inventory_hostname }}" http://localhost/.well-known/matrix/server -o /dev/stderr -w "%{http_code}") -eq 200 ]'
+          interval: 2s
+          retries: 5
+      tags: [ 'deploy', 'deploy-wellknown' ]
+  handlers:
+    - name: restart-wellknown
+      docker_container:
+        name: "{{ wellknown_container_name }}"
+        state: started
+        restart: yes
+  vars:
+    wellknown_basepath: /opt/matrix-wellknown
+    wellknown_container_name: "matrix-wellknown"
+    wellknown_container_image_name: "docker.io/library/nginx"
+    wellknown_container_image_tag: "1-alpine"
+    wellknown_container_image: "{{ wellknown_container_image_name }}:{{ wellknown_container_image_tag }}"
+    wellknown_container_ports: []
+    wellknown_container_volumes:
+      - "{{ wellknown_basepath }}/well-known.conf:/etc/nginx/conf.d/well-known.conf:ro"
+    wellknown_container_labels:
+      traefik.enable: "true"
+      traefik.http.routers.well-known.entrypoints: "web-secure"
+      traefik.http.routers.well-known.rule: "Host(`{{ inventory_hostname }}`) && PathPrefix(`/.well-known/matrix/`)"
+      traefik.http.routers.well-known.tls.certresolver: "acme"

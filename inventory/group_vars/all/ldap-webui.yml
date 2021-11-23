@@ -1,0 +1,27 @@
+---
+ldap_management_service_config: "#PYTHON2BASH:[
+  {'{{ inventory_hostname }}': [
+    {'server': [
+      {'tls': False},
+      {'port': 389},
+      {'host': '172.17.0.1'},
+      {'base': \"array('{{ ldap_base_dn }}')\"}
+    ]},
+    {'login': [
+      {'anon_bind': False},
+      {'attr': 'uid'},
+      {'base': \"array('ou=users,{{ ldap_base_dn }}')\"},
+      {'bind_id': 'uid=phpldapadmin,ou=services,{{ ldap_base_dn }}'},
+      {'bind_pass': '{{ ldap_phpldapadmin_password }}'}
+    ]}
+  ]}]"
+ldap_management_container_enabled: true
+ldap_management_container_env:
+  PHPLDAPADMIN_HTTPS: "false"
+  PHPLDAPADMIN_LDAP_HOSTS_FRIENDLY: "true"
+  PHPLDAPADMIN_LDAP_HOSTS: "{{ ldap_management_service_config | trim }}"
+ldap_management_container_labels:
+  traefik.enable: "true"
+  traefik.http.routers.ldap_ui.entrypoints: "web-secure"
+  traefik.http.routers.ldap_ui.rule: "Host(`ldap-{{ inventory_hostname }}`)"
+  traefik.http.routers.ldap_ui.tls.certresolver: "acme"

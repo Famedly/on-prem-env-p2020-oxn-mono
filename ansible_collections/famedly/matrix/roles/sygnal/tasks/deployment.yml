@@ -1,0 +1,58 @@
+---
+- name: install sygnal with pip into virtualenv
+  block:
+    - name: Install dependencies
+      apt:
+        name:
+          - build-essential
+          - python-dev
+          - python-pip
+          - python-setuptools
+          - libssl-dev
+          - python-virtualenv
+          - git
+        state: present
+        cache_valid_time: 1800
+
+    - name: Create virtualenv
+      pip:
+        name:
+          - pip
+          - setuptools
+        virtualenv: "{{ sygnal_base_path }}/env"
+        virtualenv_python: python2
+        extra_args: --upgrade
+
+    - name: Clone sygnal
+      git:
+        repo: https://github.com/matrix-org/sygnal
+        dest: "{{ sygnal_base_path }}/sygnal"
+        accept_hostkey: yes
+        version: "master"
+      register: clone_sygnal
+
+    - name: Install sygnal
+      pip:
+        name: "{{ sygnal_base_path }}/sygnal"
+        virtualenv: "{{ sygnal_base_path }}/env"
+        virtualenv_python: python2
+      when: clone_sygnal.changed
+      notify: restart sygnal
+  when: sygnal_deployment_method == "pip"
+
+- name: install sygnal with docker
+  docker_container:
+    name: "{{ sygnal_docker_name }}"
+    image: "{{ sygnal_docker_image }}"
+    ports: "{{ sygnal_docker_ports }}"
+    labels: "{{ sygnal_docker_labels_complete }}"
+    restart_policy: unless-stopped
+    recreate: true
+    pull: true
+    user: "{{ sygnal_user.uid }}:{{ sygnal_user.group }}"
+    env:
+      SYGNAL_CONF: "{{ sygnal_base_path }}/sygnal.yml"
+    volumes:
+      - "{{ sygnal_base_path }}/sygnal.yml:{{ sygnal_base_path }}/sygnal.yml"
+  when: sygnal_deployment_method == "docker"
+

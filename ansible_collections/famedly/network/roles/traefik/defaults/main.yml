@@ -1,0 +1,92 @@
+---
+
+traefik_version: "2.5.2"
+traefik_user: traefik
+traefik_base_path: /opt/traefik
+traefik_base_path_owner: "{{ traefik_user }}"
+traefik_base_path_group: "{{ traefik_user }}"
+traefik_base_path_mode: "0750"
+
+traefik_dyn_config_path: "{{ traefik_base_path }}/config.d"
+
+traefik_log_level: ERROR
+traefik_enable_docker: true
+traefik_enable_api: true
+traefik_enable_api_tls: true
+traefik_enable_api_dashboard: true
+traefik_enable_api_debug: false
+traefik_enable_api_authentication: false
+traefik_enable_prometheus: true
+traefik_enable_access_log: false
+traefik_enable_https_redirect: true
+traefik_enable_metrics: true
+traefik_api_entrypoint: web-secure
+traefik_container_name: traefik
+#traefik_container_networks:
+traefik_container_network_mode: host
+traefik_container_etc_hosts: {}
+traefik_container_ports: []
+traefik_container_labels: {}
+traefik_container_env: {}
+traefik_api_users_file: "{{ traefik_base_path }}/config.d/auth.htpasswd"
+traefik_api_admin_username: admin
+
+traefik_cert_resolvers: []
+# wants:
+# slug: "myresolver"
+# acme:
+#   ca_server: https://acme-v02.api.letsencrypt.org/directory
+#   registration_email: "devops@company.com"
+#   challenge_type: "HTTP-01"
+#   challenge_config: `{entrypoint: web}` or `{provider: cloudflare}`
+#   account:
+#      uri: set_to_not_request_an_account
+#      privkey: $privkey
+#      privkey_type: RSA$length
+#      contact:
+#        - "mailto: {{ acme.registration_email }}"
+
+traefik_container_volumes:
+  - "{{ traefik_container_socket }}:/var/run/docker.sock"
+  - "{{ traefik_base_path }}/config.yml:/traefik.yml"
+  - "{{ traefik_base_path }}/config.d/:{{ traefik_base_path }}/config.d/"
+  - "{{ traefik_base_path }}/acme.json:/acme.json"
+
+traefik_default_entrypoints:
+  - name: web
+    config:
+      address: ":80"
+  - name: web-secure
+    config:
+      address: ":443"
+  - name: ping
+    config:
+      address: ":8022"
+traefik_additional_entrypoints: []
+traefik_metrics_rule: "Host(`{{ traefik_api_host }}`) && Path(`/metrics`)"
+traefik_metrics_enable_tls: false
+
+traefik_dynamic_extra_configs: []
+traefik_dynamic_configs_base: |
+  {%- set config = [] -%}
+  {%- do config.append("api-router") if traefik_enable_api -%}
+  {%- do config.append("metrics-router") if traefik_enable_metrics -%}
+  {%- do config.append("https-redirect") if traefik_enable_https_redirect -%}
+  {%- do config.append("tls") -%}
+  {{ config }}
+
+traefik_container_image_ref: "{{ traefik_container_image_name }}:{{ traefik_container_image_tag }}"
+traefik_container_image_name: docker.io/traefik
+traefik_container_image_tag: "v{{ traefik_version }}"
+traefik_container_socket: /var/run/docker.sock
+traefik_container_pull: true
+
+traefik_manual_tls_management_enabled: false
+traefik_cert_path: "{{ traefik_base_path }}/certs"
+traefik_cert_path_owner: "{{ traefik_user }}"
+traefik_cert_path_group: "{{ traefik_user }}"
+traefik_cert_path_mode: "0750"
+# Expects objects with the key "name", "fullchain" and "privkey"
+traefik_certs_to_deploy: []
+# Expects objects with a "fullchain" and "privkey" field
+traefik_certs_to_load: []
